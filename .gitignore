@@ -35,3 +35,6 @@ coverage/
 .nyc_output/
 
 /src/generated/prisma
+
+# FCC raw data files (large, not committed — run npm run fcc:preprocess locally)
+data/raw/
