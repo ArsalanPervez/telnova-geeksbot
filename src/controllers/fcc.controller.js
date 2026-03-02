@@ -1,6 +1,6 @@
 /**
  * fcc.controller.js
- * Uses FCC BDC public dataset API (no browser required)
+ * Uses FCC National Broadband Map Area API - server friendly
  */
 
 const TECH_MAP = {
@@ -79,43 +79,96 @@ async function zipToCoords(zip) {
   };
 }
 
-async function fetchProviders(zip) {
-  // Option 1: Census Bureau + FCC BDC summary API
-  const url = `https://broadbandmap.fcc.gov/api/public/map/listAvailabilityCount?zip=${zip}`;
+/**
+ * Try multiple FCC-adjacent APIs that don't require browser context
+ */
+async function fetchProviders(lat, lon, zip, state) {
+  const attempts = [
 
-  // Option 2: Use the FCC dataset download API (returns CSV-style JSON)
-  const bdcUrl = `https://broadbandmap.fcc.gov/api/public/map/availability/summary?zip=${zip}&category=Residential`;
+    // ── Attempt 1: FCC Open Data API (developer.fcc.gov) ──────────────────
+    async () => {
+      const url = `https://developer.fcc.gov/api/block/find?latitude=${lat}&longitude=${lon}&format=json&showall=true`;
+      console.log('  [1] Trying FCC developer block API...');
+      const res = await fetchWithTimeout(url, {
+        headers: { 'Accept': 'application/json' }
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      // Returns block FIPS — use to query broadband
+      const block = data?.Block?.FIPS;
+      if (!block) throw new Error('No block FIPS returned');
 
-  const headers = {
-    'Accept':          'application/json, text/plain, */*',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Origin':          'https://broadbandmap.fcc.gov',
-    'Referer':         'https://broadbandmap.fcc.gov/home',
-    'User-Agent':      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'sec-ch-ua':       '"Not_A Brand";v="8", "Chromium";v="120"',
-    'sec-fetch-dest':  'empty',
-    'sec-fetch-mode':  'cors',
-    'sec-fetch-site':  'same-origin',
-  };
+      // Now query broadband by block
+      const bbUrl = `https://broadbandmap.fcc.gov/api/public/map/listAvailability?block_fips=${block}&category=Residential`;
+      const bbRes = await fetchWithTimeout(bbUrl, {
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Referer': 'https://broadbandmap.fcc.gov/',
+        }
+      });
+      if (!bbRes.ok) throw new Error(`Broadband HTTP ${bbRes.status}`);
+      const bbData = await bbRes.json();
+      const avail = bbData?.output?.availability ?? bbData?.availability ?? (Array.isArray(bbData) ? bbData : null);
+      if (!Array.isArray(avail)) throw new Error('No availability array');
+      return avail;
+    },
 
-  const res = await fetchWithTimeout(bdcUrl, { headers });
+    // ── Attempt 2: OpenFCC API ─────────────────────────────────────────────
+    async () => {
+      console.log('  [2] Trying OpenFCC API...');
+      const url = `https://opendata.fcc.gov/api/odata/v4/mf2022_providers_by_postal_code?$filter=postal_code eq '${zip}'&$select=provider_id,brand_name,technology,max_advertised_download_speed,max_advertised_upload_speed&$top=100`;
+      const res = await fetchWithTimeout(url, {
+        headers: { 'Accept': 'application/json' }
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const records = data?.value ?? data?.results ?? (Array.isArray(data) ? data : null);
+      if (!Array.isArray(records) || records.length === 0) throw new Error('No records');
+      return records;
+    },
 
-  if (!res.ok) throw new Error(`FCC BDC summary HTTP ${res.status}`);
+    // ── Attempt 3: FCC OData - 2023 dataset ───────────────────────────────
+    async () => {
+      console.log('  [3] Trying FCC OData 2023 dataset...');
+      const url = `https://opendata.fcc.gov/api/odata/v4/mf2023_providers_by_postal_code?$filter=postal_code eq '${zip}'&$select=brand_name,technology,max_advertised_download_speed,max_advertised_upload_speed&$top=100`;
+      const res = await fetchWithTimeout(url, {
+        headers: { 'Accept': 'application/json' }
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const records = data?.value ?? (Array.isArray(data) ? data : null);
+      if (!Array.isArray(records) || records.length === 0) throw new Error('No records');
+      return records;
+    },
 
-  const data = await res.json();
+    // ── Attempt 4: Socrata FCC Open Data ──────────────────────────────────
+    async () => {
+      console.log('  [4] Trying Socrata FCC dataset...');
+      const url = `https://opendata.fcc.gov/resource/hicn-aujz.json?zip_code=${zip}&$limit=100`;
+      const res = await fetchWithTimeout(url, {
+        headers: { 'Accept': 'application/json' }
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (!Array.isArray(data) || data.length === 0) throw new Error('No records');
+      return data;
+    },
+  ];
 
-  const avail =
-    data?.output?.availability ??
-    data?.availability ??
-    data?.results ??
-    data?.data ??
-    (Array.isArray(data) ? data : null);
-
-  if (!Array.isArray(avail)) {
-    throw new Error(`Unexpected FCC response: ${JSON.stringify(data).slice(0, 200)}`);
+  const errors = [];
+  for (const attempt of attempts) {
+    try {
+      const result = await attempt();
+      console.log(`  ✓ Got ${result.length} records`);
+      return result;
+    } catch (err) {
+      console.warn(`  ✗ Failed: ${err.message}`);
+      errors.push(err.message);
+    }
   }
 
-  return avail;
+  throw new Error('All provider sources failed:\n' + errors.map(e => '  • ' + e).join('\n'));
 }
 
 const lookup = async (req, res) => {
@@ -129,7 +182,7 @@ const lookup = async (req, res) => {
 
   try {
     const coords    = await zipToCoords(zip);
-    const raw       = await fetchProviders(zip);
+    const raw       = await fetchProviders(coords.lat, coords.lon, zip, coords.state);
     const providers = normalise(raw);
 
     return res.json({
