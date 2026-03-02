@@ -1,0 +1,473 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "library"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum UserRole {
+  CUSTOMER
+  AGENT
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum UserTier {
+  FREE
+  BASIC
+  PREMIUM
+  ENTERPRISE
+}
+
+enum ServiceType {
+  INTERNET
+  TV
+  PHONE
+  BUNDLE
+}
+
+enum ServiceStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+  CANCELLED
+}
+
+enum TicketType {
+  BILLING
+  TECHNICAL
+  PLAN_CHANGE
+  CANCELLATION
+  GENERAL
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_CUSTOMER
+  RESOLVED
+  CLOSED
+}
+
+enum SenderType {
+  USER
+  AGENT
+  SYSTEM
+}
+
+enum OutageStatus {
+  REPORTED
+  INVESTIGATING
+  IDENTIFIED
+  RESOLVED
+}
+
+// ============================================
+// USERS & ROLES
+// ============================================
+
+model User {
+  id        String     @id @default(cuid())
+  name      String
+  email     String     @unique
+  phone     String?
+  password  String
+  role      UserRole   @default(CUSTOMER)
+  tier      UserTier   @default(FREE)
+  status    UserStatus @default(ACTIVE)
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+
+  // Relations
+  agent          Agent?
+  addresses      Address[]
+  subscriptions  Subscription[]
+  comparisonLogs ComparisonLog[]
+  tickets        Ticket[]        @relation("UserTickets")
+  bills          Bill[]
+  speedTests     SpeedTest[]
+  payments       Payment[]
+  rewards        UserReward[]
+
+  @@map("users")
+}
+
+model Agent {
+  id        String   @id @default(cuid())
+  userId    String   @unique @map("user_id")
+  skills    String[] // e.g., ["billing", "technical", "retention"]
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tickets Ticket[] @relation("AgentTickets")
+
+  @@map("agents")
+}
+
+// ============================================
+// ADDRESSES & SERVICES
+// ============================================
+
+model Address {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  addressLine String   @map("address_line")
+  city        String
+  state       String
+  zip         String
+  isPrimary   Boolean  @default(false) @map("is_primary")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  services       Service[]
+  comparisonLogs ComparisonLog[]
+  speedTests     SpeedTest[]
+
+  @@index([zip])
+  @@index([userId])
+  @@map("addresses")
+}
+
+model Service {
+  id         String        @id @default(cuid())
+  addressId  String        @map("address_id")
+  type       ServiceType
+  providerId String        @map("provider_id")
+  planId     String        @map("plan_id")
+  status     ServiceStatus @default(PENDING)
+  accountNo  String?       @map("account_no")
+  createdAt  DateTime      @default(now()) @map("created_at")
+  updatedAt  DateTime      @updatedAt @map("updated_at")
+
+  // Relations
+  address       Address        @relation(fields: [addressId], references: [id], onDelete: Cascade)
+  provider      Provider       @relation(fields: [providerId], references: [id])
+  plan          Plan           @relation(fields: [planId], references: [id])
+  subscriptions Subscription[]
+  bills         Bill[]
+
+  @@index([addressId])
+  @@index([providerId])
+  @@map("services")
+}
+
+model Subscription {
+  id        String    @id @default(cuid())
+  userId    String    @map("user_id")
+  serviceId String    @map("service_id")
+  startDate DateTime  @map("start_date")
+  endDate   DateTime? @map("end_date")
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([serviceId])
+  @@map("subscriptions")
+}
+
+// ============================================
+// PROVIDERS & PLANS
+// ============================================
+
+model Provider {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  logo         String?
+  website      String?
+  supportPhone String?  @map("support_phone")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  departments  ProviderDepartment[]
+  plans        Plan[]
+  services     Service[]
+  availability ProviderAvailability[]
+  outages      Outage[]
+
+  @@map("providers")
+}
+
+model ProviderDepartment {
+  id             String   @id @default(cuid())
+  providerId     String   @map("provider_id")
+  departmentName String   @map("department_name")
+  phone          String
+  ivrSteps       Json?    @map("ivr_steps") // JSON array of IVR navigation steps
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId])
+  @@map("provider_departments")
+}
+
+model Plan {
+  id          String      @id @default(cuid())
+  providerId  String      @map("provider_id")
+  serviceType ServiceType @map("service_type")
+  name        String
+  speed       Int?        // Mbps for internet plans
+  price       Decimal     @db.Decimal(10, 2)
+  features    Json?       // Additional features as JSON
+  active      Boolean     @default(true)
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  // Relations
+  provider       Provider        @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  services       Service[]
+  comparisonLogs ComparisonLog[]
+
+  @@index([providerId])
+  @@index([serviceType])
+  @@map("plans")
+}
+
+// ============================================
+// COMPARISON ENGINE
+// ============================================
+
+model ProviderAvailability {
+  id          String      @id @default(cuid())
+  providerId  String      @map("provider_id")
+  zip         String
+  serviceType ServiceType @map("service_type")
+  available   Boolean     @default(true)
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  // Relations
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, zip, serviceType])
+  @@index([zip])
+  @@map("provider_availability")
+}
+
+model ComparisonLog {
+  id                String   @id @default(cuid())
+  userId            String?  @map("user_id")
+  addressId         String?  @map("address_id")
+  zip               String
+  serviceType       ServiceType @map("service_type")
+  recommendedPlanId String?  @map("recommended_plan_id")
+  plansCompared     Json?    @map("plans_compared") // Array of plan IDs that were compared
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  address         Address? @relation(fields: [addressId], references: [id], onDelete: SetNull)
+  recommendedPlan Plan?    @relation(fields: [recommendedPlanId], references: [id], onDelete: SetNull)
+
+  @@index([zip])
+  @@index([userId])
+  @@map("comparison_logs")
+}
+
+// ============================================
+// PAID WORKFLOW (TICKETS)
+// ============================================
+
+model Ticket {
+  id        String       @id @default(cuid())
+  userId    String       @map("user_id")
+  agentId   String?      @map("agent_id")
+  type      TicketType
+  status    TicketStatus @default(OPEN)
+  subject   String
+  priority  Int          @default(3) // 1=highest, 5=lowest
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+  closedAt  DateTime?    @map("closed_at")
+
+  // Relations
+  user     User            @relation("UserTickets", fields: [userId], references: [id], onDelete: Cascade)
+  agent    Agent?          @relation("AgentTickets", fields: [agentId], references: [id], onDelete: SetNull)
+  messages TicketMessage[]
+
+  @@index([userId])
+  @@index([agentId])
+  @@index([status])
+  @@map("tickets")
+}
+
+model TicketMessage {
+  id         String     @id @default(cuid())
+  ticketId   String     @map("ticket_id")
+  senderType SenderType @map("sender_type")
+  senderId   String?    @map("sender_id") // User or Agent ID
+  message    String
+  createdAt  DateTime   @default(now()) @map("created_at")
+
+  // Relations
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@map("ticket_messages")
+}
+
+// ============================================
+// BILLS & ANALYTICS
+// ============================================
+
+model Bill {
+  id           String   @id @default(cuid())
+  userId       String   @map("user_id")
+  serviceId    String   @map("service_id")
+  fileUrl      String   @map("file_url")
+  amount       Decimal? @db.Decimal(10, 2)
+  billingDate  DateTime? @map("billing_date")
+  dueDate      DateTime? @map("due_date")
+  analyzed     Boolean  @default(false)
+  analysisData Json?    @map("analysis_data") // Extracted bill data
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([serviceId])
+  @@map("bills")
+}
+
+model Outage {
+  id         String       @id @default(cuid())
+  providerId String       @map("provider_id")
+  region     String       // Could be zip, city, or area name
+  status     OutageStatus @default(REPORTED)
+  title      String?
+  message    String?
+  reportedAt DateTime     @default(now()) @map("reported_at")
+  resolvedAt DateTime?    @map("resolved_at")
+  updatedAt  DateTime     @updatedAt @map("updated_at")
+
+  // Relations
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId])
+  @@index([region])
+  @@index([status])
+  @@map("outages")
+}
+
+model SpeedTest {
+  id        String   @id @default(cuid())
+  userId    String?  @map("user_id")
+  addressId String?  @map("address_id")
+  download  Float    // Mbps
+  upload    Float    // Mbps
+  ping      Float    // ms
+  jitter    Float?   // ms
+  server    String?  // Test server location
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  address Address? @relation(fields: [addressId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([addressId])
+  @@map("speed_tests")
+}
+
+// ============================================
+// PAYMENTS & REWARDS
+// ============================================
+
+model PaymentPlan {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  price       Decimal  @db.Decimal(10, 2)
+  duration    Int      // Duration in days
+  features    Json?    // List of features included
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  payments Payment[]
+
+  @@map("payment_plans")
+}
+
+model Payment {
+  id            String   @id @default(cuid())
+  userId        String   @map("user_id")
+  paymentPlanId String   @map("payment_plan_id")
+  amount        Decimal  @db.Decimal(10, 2)
+  currency      String   @default("USD")
+  status        String   @default("pending") // pending, completed, failed, refunded
+  transactionId String?  @unique @map("transaction_id")
+  paymentMethod String?  @map("payment_method")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paymentPlan PaymentPlan @relation(fields: [paymentPlanId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@map("payments")
+}
+
+model Reward {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  points      Int      // Points required to redeem
+  type        String   // discount, credit, gift_card, etc.
+  value       Decimal  @db.Decimal(10, 2)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  userRewards UserReward[]
+
+  @@map("rewards")
+}
+
+model UserReward {
+  id         String    @id @default(cuid())
+  userId     String    @map("user_id")
+  rewardId   String    @map("reward_id")
+  points     Int       // Points earned/spent
+  action     String    // earned, redeemed
+  redeemedAt DateTime? @map("redeemed_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reward Reward @relation(fields: [rewardId], references: [id])
+
+  @@index([userId])
+  @@map("user_rewards")
+}

@@ -1,0 +1,47 @@
+name: Deploy FE to EC2
+
+on:
+  push:
+    branches:
+      - setup-schemaDesign
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v0.1.8
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USER }}
+          key: ${{ secrets.SSH_KEY }}
+          command_timeout: 30m
+          script: |
+            set -e
+            echo "Connecting to EC2..."
+
+            cd /home/ubuntu/telnova-backend
+            
+            git reset --hard
+            git clean -fd
+            
+            git pull --ff-only origin setup-schemaDesign
+            
+            echo "Installing dependencies..."
+            npm install
+
+            echo "Running Prisma generate..."
+            npx prisma generate
+
+            echo "Applying database migrations..."
+            npx prisma migrate deploy
+
+            pm2 restart telnova-backend || pm2 start npm --name "telnova-backend" -- start
+            pm2 save
+
+
+            
