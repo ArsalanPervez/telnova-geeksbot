@@ -471,3 +471,23 @@ model UserReward {
   @@index([userId])
   @@map("user_rewards")
 }
+
+// ============================================
+// FCC BROADBAND DATA (preprocessed ZIP-level)
+// ============================================
+
+model ZipProvider {
+  zip         String
+  brandName   String  @map("brand_name")
+  technology  String
+  maxDlSpeed  Int     @map("max_dl_speed")
+  maxUlSpeed  Int     @map("max_ul_speed")
+  lowLatency  Boolean @map("low_latency")
+  serviceType String  @map("service_type")
+  stateUsps   String  @map("state_usps")
+  city        String
+
+  @@id([zip, brandName, technology])
+  @@index([stateUsps])
+  @@map("zip_providers")
+}

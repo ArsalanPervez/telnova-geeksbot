@@ -7,27 +7,25 @@ const prisma = require('./config/prisma');
 const authRoutes = require('./routes/auth.routes');
 const fccRoutes  = require('./routes/fcc.routes');
 
+const path = require('path');
+
 const app = express();
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, 'public')));
+
+const response = require('./utils/apiResponse');
 
 // Routes
 app.get('/', (req, res) => {
-  res.json({
-    message: 'Welcome to Telnova API',
-    version: '1.0.0',
-    status: 'running'
-  });
+  response.success(res, 'Welcome to Telnova API', { version: '1.0.0' });
 });
 
 app.get('/health', (req, res) => {
-  res.json({
-    status: 'OK',
-    timestamp: new Date().toISOString()
-  });
+  response.success(res, 'OK', { timestamp: new Date().toISOString() });
 });
 
 // Database connection test endpoint with Prisma
@@ -54,18 +52,13 @@ app.use('/api/fcc',  fccRoutes);
 
 // 404 handler
 app.use((req, res) => {
-  res.status(404).json({
-    error: 'Route not found'
-  });
+  response.error(res, 'Route not found', 404);
 });
 
 // Error handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({
-    error: 'Internal server error',
-    message: err.message
-  });
+  response.error(res, err.message || 'Internal server error', 500);
 });
 
 // Start server
