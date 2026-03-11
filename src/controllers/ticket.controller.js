@@ -89,7 +89,7 @@ const getTicketById = async (req, res) => {
 
 const createTicket = async (req, res) => {
   try {
-    const { type, subject, priority, message, zip } = req.body;
+    const { type, subject, priority, message, zip, provider } = req.body;
     const userId = req.user.id;
 
     if (!type || !subject) {
@@ -107,6 +107,7 @@ const createTicket = async (req, res) => {
         type,
         subject,
         zip: zip || null,
+        provider: provider || null,
         priority: priority ? parseInt(priority) : 3,
         ...(message && {
           messages: {
