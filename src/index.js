@@ -4,8 +4,11 @@ const config = require('./config/config');
 const prisma = require('./config/prisma');
 
 // Routes
-const authRoutes = require('./routes/auth.routes');
-const fccRoutes  = require('./routes/fcc.routes');
+const authRoutes   = require('./routes/auth.routes');
+const fccRoutes    = require('./routes/fcc.routes');
+const agentRoutes  = require('./routes/agent.routes');
+const ticketRoutes = require('./routes/ticket.routes');
+const userRoutes   = require('./routes/user.routes');
 
 const path = require('path');
 
@@ -47,8 +50,11 @@ app.get('/db-test', async (req, res) => {
 });
 
 // API Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/fcc',  fccRoutes);
+app.use('/api/auth',    authRoutes);
+app.use('/api/fcc',     fccRoutes);
+app.use('/api/agents',  agentRoutes);
+app.use('/api/tickets', ticketRoutes);
+app.use('/api/users',   userRoutes);
 
 // 404 handler
 app.use((req, res) => {
@@ -62,7 +68,7 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-const PORT = process.env.PORT || config.port || 3000;
+const PORT = process.env.PORT || config.port || 8001;
 app.listen(PORT, async () => {
   console.log(`Server is running on port ${PORT}`);
   console.log(`Environment: ${config.env}`);

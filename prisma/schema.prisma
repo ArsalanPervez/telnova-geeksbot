@@ -90,32 +90,17 @@ model User {
   updatedAt DateTime   @updatedAt @map("updated_at")
 
   // Relations
-  agent          Agent?
   addresses      Address[]
   subscriptions  Subscription[]
   comparisonLogs ComparisonLog[]
   tickets        Ticket[]        @relation("UserTickets")
+  agentTickets   Ticket[]        @relation("AgentTickets")
   bills          Bill[]
   speedTests     SpeedTest[]
   payments       Payment[]
   rewards        UserReward[]
 
   @@map("users")
-}
-
-model Agent {
-  id        String   @id @default(cuid())
-  userId    String   @unique @map("user_id")
-  skills    String[] // e.g., ["billing", "technical", "retention"]
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tickets Ticket[] @relation("AgentTickets")
-
-  @@map("agents")
 }
 
 // ============================================
@@ -306,7 +291,7 @@ model Ticket {
 
   // Relations
   user     User            @relation("UserTickets", fields: [userId], references: [id], onDelete: Cascade)
-  agent    Agent?          @relation("AgentTickets", fields: [agentId], references: [id], onDelete: SetNull)
+  agent    User?           @relation("AgentTickets", fields: [agentId], references: [id], onDelete: SetNull)
   messages TicketMessage[]
 
   @@index([userId])
