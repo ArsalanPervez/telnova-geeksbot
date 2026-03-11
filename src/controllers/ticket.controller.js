@@ -63,7 +63,24 @@ const getTicketById = async (req, res) => {
       return response.error(res, 'Ticket not found', 404);
     }
 
-    return response.success(res, 'Ticket retrieved successfully', ticket);
+    // Fetch FCC provider details if ticket has a ZIP
+    let providers = null;
+    if (ticket.zip) {
+      const rows = await prisma.zipProvider.findMany({ where: { zip: ticket.zip } });
+      if (rows.length > 0) {
+        providers = {
+          zip: ticket.zip,
+          city: rows[0].city,
+          state: rows[0].stateUsps,
+          list: rows
+            .map(r => ({ brand: r.brandName, tech: r.technology, dl: r.maxDlSpeed, ul: r.maxUlSpeed, ll: r.lowLatency, svc: r.serviceType }))
+            .sort((a, b) => b.dl - a.dl || a.brand.localeCompare(b.brand)),
+          total: rows.length,
+        };
+      }
+    }
+
+    return response.success(res, 'Ticket retrieved successfully', { ...ticket, providers });
   } catch (err) {
     console.error('[GET TICKET]', err.message);
     return response.error(res, 'Failed to retrieve ticket', 500);
@@ -72,7 +89,7 @@ const getTicketById = async (req, res) => {
 
 const createTicket = async (req, res) => {
   try {
-    const { type, subject, priority, message } = req.body;
+    const { type, subject, priority, message, zip } = req.body;
     const userId = req.user.id;
 
     if (!type || !subject) {
@@ -89,6 +106,7 @@ const createTicket = async (req, res) => {
         userId,
         type,
         subject,
+        zip: zip || null,
         priority: priority ? parseInt(priority) : 3,
         ...(message && {
           messages: {

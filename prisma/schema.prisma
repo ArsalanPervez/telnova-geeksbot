@@ -284,6 +284,7 @@ model Ticket {
   type      TicketType
   status    TicketStatus @default(OPEN)
   subject   String
+  zip       String?
   priority  Int          @default(3) // 1=highest, 5=lowest
   createdAt DateTime     @default(now()) @map("created_at")
   updatedAt DateTime     @updatedAt @map("updated_at")
